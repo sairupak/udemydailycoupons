@@ -10,10 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v4
+      # Upgraded from v4 to v6 to natively support the Node 24 runtime
+      uses: actions/checkout@v6
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      # Upgraded from v5 to v6 to natively support the Node 24 runtime
+      uses: actions/setup-python@v6
       with:
         python-version: '3.10'
 
