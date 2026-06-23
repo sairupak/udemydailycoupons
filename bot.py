@@ -1,52 +1,53 @@
 import os
 import xml.etree.ElementTree as ET
 import requests
+import re
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID")
 CUELINKS_SUBID = "telegram_bot"
 
 def get_affiliate_link(raw_url):
-    encoded_url = requests.utils.quote(raw_url)
+    # Trims out tracking junk from raw source url and builds your monetization hop link
+    clean_url = raw_url.split('?')[0] if '?' in raw_url else raw_url
+    encoded_url = requests.utils.quote(clean_url)
     return f"https://links2revenue.com/?pubid=YOUR_ID&url={encoded_url}&subid={CUELINKS_SUBID}"
 
 def check_live_deals():
+    # Direct Developer & Coupon RSS Hubs (No 429 blocks)
     feed_urls = [
-        "https://www.reddit.com/r/udemyfreebies/new/.rss",
-        "https://www.reddit.com/r/googleplaydeals/new/.rss"
+        "https://feeds.feedburner.com/OnlineCourses24", 
+        "https://www.tutorialbar.com/feed/",
+        "https://freebieshopes.com/feed"
     ]
     
-    # Using an updated 2026 browser identity to avoid Reddit blocking us
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     for url in feed_urls:
         try:
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=15)
             if response.status_code != 200:
-                print(f"Skipping {url}: Status code {response.status_code}")
+                print(f"Skipping feed: {url} due to code {response.status_code}")
                 continue
-                
-            # Safely parse XML data
+            
             root = ET.fromstring(response.content)
             
-            for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
-                title_node = entry.find("{http://www.w3.org/2005/Atom}title")
-                if title_node is None or not title_node.text:
-                    continue
-                title = title_node.text
+            # Standard WordPress/Website RSS formats use '<item>' instead of '<entry>'
+            items = root.findall(".//item")
+            print(f"Processing {len(items)} deals from {url}...")
+            
+            for item in items[:7]: # Scan the freshest 7 deals per run
+                title = item.find("title").text
+                raw_link = item.find("link").text
                 
-                link_node = entry.find("{http://www.w3.org/2005/Atom}link")
-                if link_node is None:
-                    continue
-                raw_url = link_node.attrib.get("href")
-                
-                if "100% OFF" in title.upper() or "[FREE]" in title.upper():
-                    affiliate_link = get_affiliate_link(raw_url)
+                # Broaden filtering to match any high-value free course or app giveaway
+                if any(x in title.upper() for x in ["100% OFF", "FREE", "COUPON", "GIVEAWAY"]):
+                    affiliate_link = get_affiliate_link(raw_link)
                     
                     message = (
-                        f"🔥 **LIMITED TIME 100% OFF DEAL** 🔥\n\n"
-                        f"📚 **Asset:** {title}\n\n"
-                        f"👇 **Claim it for 100% Free Here:**\n"
+                        f"🔥 **LIMITED TIME 100% FREE DROP** 🔥\n\n"
+                        f"📚 **Deal:** {title}\n\n"
+                        f"👇 **Claim Your Access Instantly Here:**\n"
                         f"{affiliate_link}"
                     )
                     
@@ -57,13 +58,13 @@ def check_live_deals():
                         "parse_mode": "Markdown"
                     }
                     
-                    tel_response = requests.post(telegram_url, json=payload, timeout=10)
-                    print(f"Telegram response status: {tel_response.status_code}")
+                    tel_res = requests.post(telegram_url, json=payload, timeout=10)
+                    print(f"Telegram Broadcast Status: {tel_res.status_code} for {title[:30]}")
 
         except ET.ParseError:
-            print(f"Failed to parse XML from {url} (Likely blocked by rate limit). Skipping safely.")
+            print(f"XML parsing variation on {url}. Skipping safely.")
         except Exception as e:
-            print(f"An unexpected error occurred with {url}: {e}. Keeping pipeline running.")
+            print(f"Error checking {url}: {e}")
 
 if __name__ == "__main__":
     check_live_deals()
